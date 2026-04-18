@@ -4,10 +4,14 @@ import { useParams, useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import MagneticButton from "@/components/motion/MagneticButton";
+import ChecklistModal, { type FilingChannel } from "@/components/complaint/ChecklistModal";
+import AsaanAppCard from "@/components/complaint/AsaanAppCard";
 import { fmtPKR } from "@/lib/utils";
-import { Copy, ExternalLink, FileDown, CheckCircle2, Clock, ShieldCheck } from "lucide-react";
+import { Copy, ExternalLink, FileDown, CheckCircle2, Clock, ShieldCheck, Globe, Smartphone } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Complaint, OverchargeResult, Bill } from "@/types";
+
+const NEPRA_WEB_PORTAL = "https://nepra.org.pk/CAD-Database/CMS-CAD/cregister.php";
 
 export default function ComplaintPage() {
   const params = useParams<{ complaintId: string }>();
@@ -15,9 +19,21 @@ export default function ComplaintPage() {
   const [complaint, setComplaint] = useState<Complaint | null>(null);
   const [overcharges, setOvercharges] = useState<OverchargeResult[]>([]);
   const [bill, setBill] = useState<Bill | null>(null);
-  const [form, setForm] = useState({ name: "", cnic: "", mobile: "", email: "", address: "", language: "both" as "english" | "urdu" | "both" });
+  const [form, setForm] = useState({
+    name: "",
+    cnic: "",
+    mobile: "",
+    email: "",
+    address: "",
+    language: "both" as "english" | "urdu" | "both",
+  });
   const [copied, setCopied] = useState(false);
   const [filed, setFiled] = useState(false);
+  const [filedChannel, setFiledChannel] = useState<FilingChannel | null>(null);
+  const [filedAt, setFiledAt] = useState<string | null>(null);
+
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [pendingChannel, setPendingChannel] = useState<FilingChannel | null>(null);
 
   useEffect(() => {
     fetch(`/api/complaint/get?id=${params.complaintId}`).then((r) => r.json()).then((d) => {
@@ -34,6 +50,7 @@ export default function ComplaintPage() {
         language: d.complaint?.language ?? "both",
       }));
       setFiled(d.complaint?.status === "filed");
+      setFiledAt(d.complaint?.filed_at ?? null);
     });
   }, [params.complaintId]);
 
@@ -57,20 +74,40 @@ export default function ComplaintPage() {
     router.replace(`/complaint/${complaintId}`);
   }
 
-  async function copyAndFile() {
-    if (!complaint) return;
+  function initiateFile(channel: FilingChannel) {
+    setPendingChannel(channel);
+    setShowChecklist(true);
+  }
+
+  async function proceedFile() {
+    if (!complaint || !pendingChannel) return;
+    const channel = pendingChannel;
+    setShowChecklist(false);
+    setPendingChannel(null);
+
     const text = form.language === "urdu" ? complaint.complaint_text_urdu : complaint.complaint_text_english;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+    } catch {
+      // browser blocked clipboard — the text is still visible in the preview
+    }
+
+    try {
+      await fetch("/api/complaint/file", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ complaintId: complaint.id }),
+      });
     } catch {}
-    await fetch("/api/complaint/file", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ complaintId: complaint.id }),
-    });
     setFiled(true);
-    window.open("https://complaints.nepra.org.pk", "_blank", "noopener,noreferrer");
+    setFiledChannel(channel);
+    setFiledAt(new Date().toISOString());
+
+    if (channel === "web") {
+      window.open(NEPRA_WEB_PORTAL, "_blank", "noopener,noreferrer");
+    }
+    // For "app", the AsaanAppCard appears inline with install + usage instructions.
   }
 
   if (!complaint || !bill) {
@@ -98,7 +135,9 @@ export default function ComplaintPage() {
             <h1 className="mt-2 text-3xl md:text-4xl font-extrabold text-primary tracking-tight">
               Refund claim: <span className="text-danger">{fmtPKR(complaint.total_refund_claimed)}</span>
             </h1>
-            <div className="mt-1 text-sm text-text-muted">{overcharges.length} violations · bill ref {bill.reference_number}</div>
+            <div className="mt-1 text-sm text-text-muted">
+              {overcharges.length} violations · bill ref {bill.reference_number}
+            </div>
           </motion.div>
 
           <div className="mt-8 grid lg:grid-cols-2 gap-6">
@@ -123,7 +162,11 @@ export default function ComplaintPage() {
                       <button
                         key={l}
                         onClick={() => setForm({ ...form, language: l })}
-                        className={`px-4 py-2 rounded-xl border transition-all ${form.language === l ? "bg-primary text-white border-primary shadow-sm" : "bg-white border-border hover:border-primary/40"}`}
+                        className={`px-4 py-2 rounded-xl border transition-all ${
+                          form.language === l
+                            ? "bg-primary text-white border-primary shadow-sm"
+                            : "bg-white border-border hover:border-primary/40"
+                        }`}
                       >
                         {l === "english" ? "English" : l === "urdu" ? "اردو" : "Both"}
                       </button>
@@ -162,24 +205,45 @@ export default function ComplaintPage() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className={`mt-3 flex-1 rounded-2xl bg-bg p-4 overflow-auto max-h-[520px] text-xs whitespace-pre-wrap leading-relaxed border border-border ${form.language === "urdu" ? "font-urdu text-right" : ""}`}
+                  className={`mt-3 flex-1 rounded-2xl bg-bg p-4 overflow-auto max-h-[420px] text-xs whitespace-pre-wrap leading-relaxed border border-border ${
+                    form.language === "urdu" ? "font-urdu text-right" : ""
+                  }`}
                 >
                   {activeText}
                 </motion.div>
               </AnimatePresence>
-              <MagneticButton
-                onClick={copyAndFile}
-                className="mt-5 w-full bg-accent text-primary font-bold px-4 py-3.5 rounded-xl hover:brightness-105 inline-flex items-center justify-center gap-2 shadow-lg shadow-accent/30"
-              >
-                <Copy size={16} /> Copy text & File with NEPRA <ExternalLink size={16} />
-              </MagneticButton>
-              {copied && (
-                <div className="mt-3 text-xs text-text-muted text-center">
-                  Complaint text copied. Paste into NEPRA form and complete with your OTP.
+
+              <div className="mt-5 rounded-2xl bg-accent/10 border border-accent/30 p-4">
+                <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-primary-light font-semibold">
+                  <Clock size={13} /> Choose your filing channel
                 </div>
-              )}
+                <p className="mt-1 text-sm text-text-main">
+                  Your complaint has been generated. NEPRA mandates a <strong>15-day resolution timeline</strong>.
+                </p>
+                <div className="mt-4 grid sm:grid-cols-2 gap-2">
+                  <MagneticButton
+                    onClick={() => initiateFile("web")}
+                    className="rounded-xl bg-primary text-white font-semibold px-4 py-3 hover:bg-primary-light inline-flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+                  >
+                    <Globe size={16} /> Open NEPRA Web Portal
+                  </MagneticButton>
+                  <MagneticButton
+                    onClick={() => initiateFile("app")}
+                    className="rounded-xl bg-accent text-primary font-bold px-4 py-3 hover:brightness-105 inline-flex items-center justify-center gap-2 shadow-lg shadow-accent/30"
+                  >
+                    <Smartphone size={16} /> Use Asaan Approach App
+                  </MagneticButton>
+                </div>
+                {copied && (
+                  <div className="mt-3 text-xs text-primary-light inline-flex items-center gap-1 justify-center w-full">
+                    <Copy size={12} /> Complaint text copied to clipboard — paste it into the form.
+                  </div>
+                )}
+              </div>
             </motion.div>
           </div>
+
+          {filed && filedChannel === "app" && <AsaanAppCard />}
 
           {filed && (
             <motion.div
@@ -194,12 +258,29 @@ export default function ComplaintPage() {
                   <CheckCircle2 />
                 </div>
                 <div>
-                  <div className="font-bold">Complaint marked as filed</div>
+                  <div className="font-bold">
+                    Complaint marked as filed
+                    {filedChannel === "web" && <> via NEPRA Web Portal</>}
+                    {filedChannel === "app" && <> via NEPRA Asaan Approach App</>}
+                  </div>
                   <div className="text-white/80 text-sm mt-1">
                     NEPRA has 15 working days to respond. We'll track this in your dashboard.
                   </div>
-                  <div className="mt-3 flex items-center gap-2 text-sm text-accent">
-                    <Clock size={16} /> Statutory clock started: {new Date().toLocaleDateString("en-PK")}
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                    <span className="inline-flex items-center gap-2 text-accent">
+                      <Clock size={16} /> Statutory clock started:{" "}
+                      {new Date(filedAt ?? Date.now()).toLocaleDateString("en-PK")}
+                    </span>
+                    {filedChannel === "web" && (
+                      <a
+                        href={NEPRA_WEB_PORTAL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs rounded-full bg-white/10 border border-white/20 px-3 py-1 hover:bg-white/20"
+                      >
+                        Re-open portal <ExternalLink size={12} />
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
@@ -207,12 +288,33 @@ export default function ComplaintPage() {
           )}
         </div>
       </main>
+
+      <ChecklistModal
+        open={showChecklist}
+        channel={pendingChannel}
+        onCancel={() => {
+          setShowChecklist(false);
+          setPendingChannel(null);
+        }}
+        onProceed={proceedFile}
+      />
+
       <Footer />
     </>
   );
 }
 
-function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+}) {
   return (
     <div>
       <label className="text-sm font-medium">{label}</label>

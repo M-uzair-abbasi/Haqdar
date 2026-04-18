@@ -237,9 +237,9 @@ export default function ResultsPage() {
               <div className="mt-10 rounded-2xl bg-accent/10 border border-accent/30 p-5 flex items-start gap-3">
                 <Clock className="mt-0.5 text-accent" size={18} />
                 <div className="text-sm">
-                  <strong>What happens next:</strong> Generate the bilingual PDF, copy the complaint text, then file via{" "}
-                  <a href="https://complaints.nepra.org.pk" target="_blank" rel="noopener noreferrer" className="text-primary underline">complaints.nepra.org.pk</a>.
-                  NEPRA has 15 working days to order a refund — we track the clock for you in your dashboard.
+                  <strong>What happens next:</strong> Generate the bilingual PDF, choose your filing channel —
+                  NEPRA's <a href="https://nepra.org.pk/CAD-Database/CMS-CAD/cregister.php" target="_blank" rel="noopener noreferrer" className="text-primary underline">web portal</a>
+                  {" "}or the Asaan Approach mobile app. NEPRA has 15 working days to order a refund; we track the clock for you in your dashboard.
                 </div>
               </div>
             </>
