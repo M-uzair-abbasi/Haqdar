@@ -9,9 +9,49 @@ function daysBetweenISO(fromISO: string, toISO: string): number {
 }
 
 // ────────────────────────────────────────────────────────────
-// A) EXACT — HIGH confidence. Uses the reading_date delta between
-//    the current bill and the most recent stored bill for the same
-//    reference number + user.
+// 0) FROM DATES — HIGH confidence (Tier 3). The user (or auto-fill)
+//    supplied both cycle endpoints on the bill itself. Direct path
+//    that fires on the very first audit.
+// ────────────────────────────────────────────────────────────
+export function detectExtendedCycleFromDates(bill: Bill): OverchargeResult | null {
+  if (!bill.reading_date_from || !bill.reading_date) return null;
+  const cycleDays = daysBetweenISO(bill.reading_date_from, bill.reading_date);
+  if (cycleDays <= 31) return null;
+
+  const expectedUnitsIn30Days = (bill.units_billed * 30) / cycleDays;
+  const recalculatedAmount = calculateSlabAmount(
+    expectedUnitsIn30Days,
+    bill.tariff_category,
+    bill.disco_name
+  );
+  const overcharge = bill.total_amount - recalculatedAmount;
+  if (overcharge <= 100) return null;
+
+  return {
+    pattern_code: "EXTENDED_CYCLE_FROM_DATES",
+    pattern_name: "Extended Billing Cycle",
+    sro_citation: "NEPRA Act Section 26(1) & SRO 1142(I)/2020",
+    overcharge_amount: Math.round(overcharge),
+    explanation_english:
+      `Cycle dates on this bill: ${bill.reading_date_from} → ${bill.reading_date} (${cycleDays} days). ` +
+      `The standard cycle is 30 days. Extending it pushed your usage into higher slabs. Normalized to ` +
+      `30 days, your bill should be approximately Rs ${Math.round(recalculatedAmount).toLocaleString()}. ` +
+      `You were overcharged Rs ${Math.round(overcharge).toLocaleString()}.`,
+    explanation_urdu:
+      `اس بل کی سائیکل تاریخیں: ${bill.reading_date_from} → ${bill.reading_date} (${cycleDays} دن)۔ ` +
+      `معیاری سائیکل 30 دن کی ہے۔ لمبی سائیکل سے آپ کی کھپت زیادہ ریٹ والے سلیب میں چلی گئی۔ ` +
+      `30 دن پر حساب کرنے سے آپ کا بل تقریباً ${Math.round(recalculatedAmount).toLocaleString()} روپے ہونا چاہیے تھا۔ ` +
+      `آپ سے ${Math.round(overcharge).toLocaleString()} روپے زیادہ وصول کیے گئے۔`,
+    severity: overcharge > 3000 ? "high" : "medium",
+    confidence: "high",
+    actual_cycle_days: cycleDays,
+  };
+}
+
+// ────────────────────────────────────────────────────────────
+// A) EXACT — HIGH confidence (Tier 2). Uses the reading_date delta
+//    between the current bill and the most recent stored bill for
+//    the same reference number + user.
 // ────────────────────────────────────────────────────────────
 export function detectExtendedCycleExact(
   currentBill: Bill,

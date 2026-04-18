@@ -256,9 +256,9 @@ function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
     return (
       <span
         className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest rounded-full bg-primary-light/10 text-primary-light border border-primary-light/30 px-2 py-0.5 font-bold"
-        title="Verified via your bill history"
+        title="Verified from exact cycle dates"
       >
-        <ShieldCheck size={11} /> Verified
+        <ShieldCheck size={11} /> Verified from exact cycle dates
       </span>
     );
   }
@@ -266,9 +266,9 @@ function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
     return (
       <span
         className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest rounded-full bg-warning/15 text-warning border border-warning/40 px-2 py-0.5 font-bold"
-        title="Pattern detected from consumption history"
+        title="Inferred from consumption pattern"
       >
-        <Sparkles size={11} /> Inferred
+        <Sparkles size={11} /> Inferred from consumption pattern
       </span>
     );
   }

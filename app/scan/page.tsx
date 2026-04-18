@@ -48,7 +48,8 @@ export default function ScanPage() {
   const [form, setForm] = useState({
     referenceNumber: "",
     units: "",
-    readingDate: "",     // end of cycle — the only date on real bills
+    dateFrom: "",        // Cycle start — read from user's previous paper bill
+    readingDate: "",     // Cycle end — the date printed on this bill
     billMonth: "",       // e.g. "APR 26"
     amount: "",
     tariff: "protected_domestic",
@@ -56,6 +57,8 @@ export default function ScanPage() {
     fpa: "",
     pugCharge: "",
   });
+  // True when dateFrom was populated from a prior audit (shows a green badge).
+  const [dateFromAutoFilled, setDateFromAutoFilled] = useState(false);
   // Hidden: 12-row consumption history from auto-fetch, threaded into the audit submit.
   const [historicalBills, setHistoricalBills] = useState<HistoricalBillEntry[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -83,13 +86,27 @@ export default function ScanPage() {
   const showAutoFetch = disco === "IESCO";
   const canAutoFetch = canUseAutoFetch(user?.subscription_tier, user?.subscription_status);
 
-  function onFetchSuccess(bill: ScrapedBill) {
-    // Canonical end-of-cycle date is the reading_date on the bill; fall back
-    // to the issue_date when the reading_date isn't parseable.
+  // Query stored bills for a previous cycle end on the same reference,
+  // so we can pre-fill Reading Date From and fire HIGH-confidence Tier 3
+  // detection on the first audit after any prior bill exists.
+  async function lookupPreviousCycleDate(refNo: string): Promise<string | null> {
+    if (!refNo.trim()) return null;
+    try {
+      const res = await fetch(`/api/bills/previous?referenceNumber=${encodeURIComponent(refNo.trim())}`);
+      if (!res.ok) return null;
+      const d = await res.json();
+      return d.readingDate ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function onFetchSuccess(bill: ScrapedBill) {
     const readingDate = parseIescoDate(bill.reading_date) || parseIescoDate(bill.issue_date);
+    const normRef = bill.reference_number?.replace(/\s/g, "") || "";
     setForm((f) => ({
       ...f,
-      referenceNumber: bill.reference_number?.replace(/\s/g, "") || f.referenceNumber,
+      referenceNumber: normRef || f.referenceNumber,
       units: String(bill.units_billed || ""),
       amount: String(bill.payable_within_due_date || ""),
       fpa: String(bill.fuel_price_adjustment || ""),
@@ -101,6 +118,24 @@ export default function ScanPage() {
     setHistoricalBills(Array.isArray(bill.historical_bills) ? bill.historical_bills : []);
     setFetchedAt(new Date().toISOString());
     setErr("");
+
+    // Attempt to auto-fill Reading Date From from the user's last audit.
+    const priorReading = await lookupPreviousCycleDate(normRef);
+    if (priorReading) {
+      setForm((f) => ({ ...f, dateFrom: priorReading }));
+      setDateFromAutoFilled(true);
+    }
+  }
+
+  // When the user finishes typing the reference number on the manual form,
+  // try the same prefill (so they also get Tier 3 without touching dateFrom).
+  async function onReferenceBlur() {
+    if (dateFromAutoFilled || form.dateFrom) return; // already populated
+    const priorReading = await lookupPreviousCycleDate(form.referenceNumber);
+    if (priorReading) {
+      setForm((f) => ({ ...f, dateFrom: priorReading }));
+      setDateFromAutoFilled(true);
+    }
   }
 
   async function submit() {
@@ -119,6 +154,7 @@ export default function ScanPage() {
           disco,
           referenceNumber: form.referenceNumber,
           units: Number(form.units),
+          dateFrom: form.dateFrom || undefined,
           readingDate: form.readingDate,
           billMonth: form.billMonth || undefined,
           amount: Number(form.amount),
@@ -230,12 +266,48 @@ export default function ScanPage() {
                     <h2 className="font-bold text-primary">Manual entry</h2>
                     <span className="text-[11px] text-text-muted">Always available · fallback to auto-fetch</span>
                   </div>
-                  <Field label="Reference / Account Number" urdu="اکاؤنٹ نمبر" value={form.referenceNumber} onChange={(v) => setForm({ ...form, referenceNumber: v })} placeholder="e.g. AB-123-456" />
+                  <Field
+                    label="Reference / Account Number"
+                    urdu="اکاؤنٹ نمبر"
+                    value={form.referenceNumber}
+                    onChange={(v) => {
+                      setForm({ ...form, referenceNumber: v });
+                      // Typing a different ref invalidates the auto-filled dateFrom
+                      if (dateFromAutoFilled) setDateFromAutoFilled(false);
+                    }}
+                    onBlur={onReferenceBlur}
+                    placeholder="e.g. AB-123-456"
+                  />
                   <Field label="Units Billed" urdu="یونٹس" value={form.units} onChange={(v) => setForm({ ...form, units: v })} placeholder="e.g. 325" type="number" help="Usually shown as 'Units' or 'kWh'" />
                   <div className="grid sm:grid-cols-2 gap-4">
-                    <Field label="Reading Date" urdu="ریڈنگ کی تاریخ" value={form.readingDate} onChange={(v) => setForm({ ...form, readingDate: v })} type="date" help="The end-of-cycle date printed on the bill" />
-                    <Field label="Bill Month (optional)" urdu="بل کا مہینہ" value={form.billMonth} onChange={(v) => setForm({ ...form, billMonth: v })} placeholder="e.g. APR 26" help="Helps cycle analysis when auto-fetch isn't available" />
+                    <div>
+                      <div className="flex items-baseline justify-between">
+                        <label className="text-sm font-medium">Reading Date From (start of cycle)</label>
+                        <span className="text-xs font-urdu text-text-muted">شروعاتی تاریخ</span>
+                      </div>
+                      <input
+                        value={form.dateFrom}
+                        onChange={(e) => {
+                          setForm({ ...form, dateFrom: e.target.value });
+                          if (dateFromAutoFilled) setDateFromAutoFilled(false);
+                        }}
+                        type="date"
+                        className="input-ring mt-1 w-full rounded-xl border border-border bg-white/90 px-4 py-3 text-[15px] transition"
+                      />
+                      {dateFromAutoFilled ? (
+                        <div className="text-xs text-primary-light mt-1 inline-flex items-center gap-1">
+                          <CheckCircle2 size={12} /> Auto-filled from your last audit
+                        </div>
+                      ) : (
+                        <div className="text-xs text-text-muted mt-1">
+                          Optional. Check your previous month's bill — look for "READING DATE".
+                          Leave blank if unavailable; we'll use your 12-month history instead.
+                        </div>
+                      )}
+                    </div>
+                    <Field label="Reading Date (end of cycle)" urdu="ریڈنگ کی تاریخ" value={form.readingDate} onChange={(v) => setForm({ ...form, readingDate: v })} type="date" help="The date printed on this bill" />
                   </div>
+                  <Field label="Bill Month (optional)" urdu="بل کا مہینہ" value={form.billMonth} onChange={(v) => setForm({ ...form, billMonth: v })} placeholder="e.g. APR 26" help="Used for seasonal cross-check when Rule #1 falls back to Tier 1 inference" />
                   <Field label="Total Amount (PKR)" urdu="کل رقم" value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} placeholder="e.g. 12500" type="number" help="Amount you are being asked to pay" />
                   <Select label="Tariff Category" urdu="ٹیرف" value={form.tariff} onChange={(v) => setForm({ ...form, tariff: v })} options={TARIFF_CATEGORIES.map((t) => ({ value: t.id, label: t.label }))} />
                   <div>
@@ -310,7 +382,7 @@ export default function ScanPage() {
   );
 }
 
-function Field({ label, urdu, value, onChange, placeholder, type = "text", help }: { label: string; urdu?: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; help?: string }) {
+function Field({ label, urdu, value, onChange, onBlur, placeholder, type = "text", help }: { label: string; urdu?: string; value: string; onChange: (v: string) => void; onBlur?: () => void; placeholder?: string; type?: string; help?: string }) {
   return (
     <div>
       <div className="flex items-baseline justify-between">
@@ -320,6 +392,7 @@ function Field({ label, urdu, value, onChange, placeholder, type = "text", help 
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         type={type}
         placeholder={placeholder}
         className="input-ring mt-1 w-full rounded-xl border border-border bg-white/90 px-4 py-3 text-[15px] transition"

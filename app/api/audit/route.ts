@@ -20,7 +20,9 @@ export async function POST(req: NextRequest) {
 
     // Canonical end-of-cycle date. Accept `readingDate` (new) or `dateTo` (legacy).
     const readingDate: string = body.readingDate ?? body.dateTo ?? "";
-    const legacyDateFrom: string | undefined = body.dateFrom || undefined;
+    // Optional cycle start date. When present, enables Tier 3 (HIGH confidence)
+    // detection directly from the bill's own dates.
+    const dateFrom: string | undefined = body.dateFrom || undefined;
 
     // Normalize historical_bills payload from auto-fetch.
     const historical: HistoricalBillEntry[] | undefined = Array.isArray(body.historicalBills)
@@ -40,7 +42,10 @@ export async function POST(req: NextRequest) {
       reading_date: readingDate,
       bill_month: body.billMonth ?? undefined,
       historical_bills: historical,
-      reading_date_from: legacyDateFrom ?? readingDate,
+      // Persist whatever dateFrom value was used — user-typed, auto-filled
+      // from history, or null. Stored as reading_date_to when absent so legacy
+      // code paths that read reading_date_from still see a valid ISO date.
+      reading_date_from: dateFrom ?? readingDate,
       reading_date_to: readingDate,
       total_amount: Number(body.amount),
       tariff_category: body.tariff,

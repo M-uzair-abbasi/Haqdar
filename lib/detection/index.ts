@@ -1,5 +1,9 @@
 import { Bill, OverchargeResult, AuditNotice } from "@/types";
-import { detectExtendedCycleExact, detectExtendedCycleFromHistory } from "./extendedCycle";
+import {
+  detectExtendedCycleFromDates,
+  detectExtendedCycleExact,
+  detectExtendedCycleFromHistory,
+} from "./extendedCycle";
 import { detectSlabAbuse } from "./rule2_slab_abuse";
 import { detectFPAOnLifeline } from "./rule3_fpa_lifeline";
 import { detectChainedEstimates } from "./rule4_chained_estimates";
@@ -19,24 +23,40 @@ export function runAllDetections(bill: Bill, ctx: DetectionContext = {}): Detect
   const notices: AuditNotice[] = [];
 
   // Rule #1 — tiered extended cycle detection:
-  //   HIGH   : exact previous-bill comparison (reading_date delta)
-  //   MEDIUM : inferred from 6+ months of consumption history
-  //   skipped: first audit, no stored prev bill, no embedded history -> emit notice
-  if (ctx.previousBill) {
+  //   TIER 3 (HIGH)   : direct dates on the bill (reading_date_from + reading_date)
+  //   TIER 2 (HIGH)   : no from-date, but stored previous bill exists for same ref+user
+  //   TIER 1 (MEDIUM) : no from-date, no prev bill, but historical_bills length >= 6
+  //   NONE            : insufficient data — skip silently and emit a UI notice
+  let rule1Fired = false;
+  // Tier 3 requires a *genuine* cycle — if reading_date_from collapses to
+  // reading_date (sentinel for "no start date provided"), fall through.
+  const hasGenuineDateRange =
+    !!bill.reading_date_from &&
+    !!bill.reading_date &&
+    bill.reading_date_from !== bill.reading_date;
+  if (hasGenuineDateRange) {
+    const fromDates = detectExtendedCycleFromDates(bill);
+    if (fromDates) overcharges.push(fromDates);
+    rule1Fired = true;
+  } else if (ctx.previousBill) {
     const exact = detectExtendedCycleExact(bill, ctx.previousBill);
     if (exact) overcharges.push(exact);
+    rule1Fired = true;
   } else if (bill.historical_bills && bill.historical_bills.length >= 6) {
     const inferred = detectExtendedCycleFromHistory(bill, bill.historical_bills);
     if (inferred) overcharges.push(inferred);
-  } else {
+    rule1Fired = true;
+  }
+
+  if (!rule1Fired) {
     notices.push({
       code: "EXTENDED_CYCLE_SKIPPED_NO_HISTORY",
       title_english: "First audit — cycle analysis activates next month",
       title_urdu: "پہلا آڈٹ — سائیکل تجزیہ اگلے مہینے فعال ہو جائے گا",
       body_english:
-        "Real electricity bills don't print a cycle start date, so cycle length can only be measured once we have either (a) a previous bill from you on the same connection, or (b) 6+ months of consumption history from the bill (IESCO auto-fetch provides this). We'll run Rule #1 automatically on your next audit.",
+        "Cycle length can only be measured when we have (a) both cycle dates on this bill, (b) a previous bill from you on the same connection, or (c) 6+ months of consumption history. Fill in 'Reading Date From' from your previous bill to enable exact detection now, otherwise Rule #1 will run automatically on your next audit.",
       body_urdu:
-        "اصلی بلوں پر سائیکل کی شروعاتی تاریخ نہیں ہوتی۔ سائیکل کی لمبائی ناپنے کے لیے یا تو (الف) اسی کنکشن کا پچھلا بل چاہیے یا (ب) بل میں 6 ماہ یا زیادہ کی کھپت کی تاریخ (IESCO آٹو فیچ سے ملتی ہے)۔ اگلے آڈٹ میں یہ رول خودکار چلے گا۔",
+        "سائیکل کی لمبائی اسی وقت ناپی جا سکتی ہے جب (الف) اس بل پر دونوں سائیکل کی تاریخیں موجود ہوں، (ب) اسی کنکشن کا پچھلا بل ہمارے پاس ہو، یا (ج) 6 ماہ یا زیادہ کی کھپت کی تاریخ موجود ہو۔ پچھلے بل سے 'Reading Date From' پُر کریں تاکہ ابھی درست تجزیہ ہو، ورنہ اگلے آڈٹ میں یہ رول خودکار چلے گا۔",
     });
   }
 
