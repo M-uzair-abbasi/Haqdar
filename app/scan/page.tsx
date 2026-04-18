@@ -12,7 +12,7 @@ import { DISCO_LIST, TARIFF_CATEGORIES, READING_TYPES } from "@/lib/slabs";
 import { Loader2, ChevronRight, ArrowLeft, Zap, Flame, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ScrapedBill } from "@/lib/scrapers";
-import type { UserRecord } from "@/types";
+import type { UserRecord, HistoricalBillEntry } from "@/types";
 
 function parseIescoDate(s?: string): string {
   if (!s) return "";
@@ -48,14 +48,16 @@ export default function ScanPage() {
   const [form, setForm] = useState({
     referenceNumber: "",
     units: "",
-    dateFrom: "",
-    dateTo: "",
+    readingDate: "",     // end of cycle — the only date on real bills
+    billMonth: "",       // e.g. "APR 26"
     amount: "",
     tariff: "protected_domestic",
     readingType: "actual",
     fpa: "",
     pugCharge: "",
   });
+  // Hidden: 12-row consumption history from auto-fetch, threaded into the audit submit.
+  const [historicalBills, setHistoricalBills] = useState<HistoricalBillEntry[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
 
@@ -72,9 +74,9 @@ export default function ScanPage() {
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
-  const days = form.dateFrom && form.dateTo
-    ? Math.max(0, Math.round((new Date(form.dateTo).getTime() - new Date(form.dateFrom).getTime()) / (1000 * 60 * 60 * 24)))
-    : 0;
+  // Real bills don't carry a cycle-start date, so we no longer compute or
+  // display "days" on the manual form. The detection engine infers cycle
+  // length from a stored previous bill or embedded consumption history.
 
   const selected = DISCO_LIST.find((d) => d.id === disco);
   const isGas = selected?.type === "gas";
@@ -82,8 +84,9 @@ export default function ScanPage() {
   const canAutoFetch = canUseAutoFetch(user?.subscription_tier, user?.subscription_status);
 
   function onFetchSuccess(bill: ScrapedBill) {
-    const dateFrom = parseIescoDate(bill.reading_date) || parseIescoDate(bill.bill_month);
-    const dateTo = parseIescoDate(bill.issue_date) || "";
+    // Canonical end-of-cycle date is the reading_date on the bill; fall back
+    // to the issue_date when the reading_date isn't parseable.
+    const readingDate = parseIescoDate(bill.reading_date) || parseIescoDate(bill.issue_date);
     setForm((f) => ({
       ...f,
       referenceNumber: bill.reference_number?.replace(/\s/g, "") || f.referenceNumber,
@@ -91,17 +94,18 @@ export default function ScanPage() {
       amount: String(bill.payable_within_due_date || ""),
       fpa: String(bill.fuel_price_adjustment || ""),
       tariff: tariffFromIesco(bill.tariff, bill.units_billed),
-      dateFrom,
-      dateTo,
+      readingDate,
+      billMonth: bill.bill_month ?? "",
       readingType: "actual",
     }));
+    setHistoricalBills(Array.isArray(bill.historical_bills) ? bill.historical_bills : []);
     setFetchedAt(new Date().toISOString());
     setErr("");
   }
 
   async function submit() {
     setErr("");
-    if (!form.referenceNumber || !form.units || !form.dateFrom || !form.dateTo || !form.amount) {
+    if (!form.referenceNumber || !form.units || !form.readingDate || !form.amount) {
       setErr("Please fill the required fields.");
       return;
     }
@@ -113,11 +117,16 @@ export default function ScanPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           disco,
-          ...form,
+          referenceNumber: form.referenceNumber,
           units: Number(form.units),
+          readingDate: form.readingDate,
+          billMonth: form.billMonth || undefined,
           amount: Number(form.amount),
+          tariff: form.tariff,
+          readingType: form.readingType,
           fpa: Number(form.fpa || 0),
           pugCharge: Number(form.pugCharge || 0),
+          historicalBills: historicalBills.length ? historicalBills : undefined,
         }),
       });
       if (!res.ok) throw new Error("Audit failed");
@@ -224,8 +233,8 @@ export default function ScanPage() {
                   <Field label="Reference / Account Number" urdu="اکاؤنٹ نمبر" value={form.referenceNumber} onChange={(v) => setForm({ ...form, referenceNumber: v })} placeholder="e.g. AB-123-456" />
                   <Field label="Units Billed" urdu="یونٹس" value={form.units} onChange={(v) => setForm({ ...form, units: v })} placeholder="e.g. 325" type="number" help="Usually shown as 'Units' or 'kWh'" />
                   <div className="grid sm:grid-cols-2 gap-4">
-                    <Field label="Reading Date From" urdu="ریڈنگ کی تاریخ (سے)" value={form.dateFrom} onChange={(v) => setForm({ ...form, dateFrom: v })} type="date" help="The earlier date on the bill" />
-                    <Field label="Reading Date To" urdu="ریڈنگ کی تاریخ (تک)" value={form.dateTo} onChange={(v) => setForm({ ...form, dateTo: v })} type="date" help={days ? `Billing days: ${days}` : "The later date on the bill"} />
+                    <Field label="Reading Date" urdu="ریڈنگ کی تاریخ" value={form.readingDate} onChange={(v) => setForm({ ...form, readingDate: v })} type="date" help="The end-of-cycle date printed on the bill" />
+                    <Field label="Bill Month (optional)" urdu="بل کا مہینہ" value={form.billMonth} onChange={(v) => setForm({ ...form, billMonth: v })} placeholder="e.g. APR 26" help="Helps cycle analysis when auto-fetch isn't available" />
                   </div>
                   <Field label="Total Amount (PKR)" urdu="کل رقم" value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} placeholder="e.g. 12500" type="number" help="Amount you are being asked to pay" />
                   <Select label="Tariff Category" urdu="ٹیرف" value={form.tariff} onChange={(v) => setForm({ ...form, tariff: v })} options={TARIFF_CATEGORIES.map((t) => ({ value: t.id, label: t.label }))} />

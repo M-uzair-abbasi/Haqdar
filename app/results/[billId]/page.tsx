@@ -6,15 +6,21 @@ import Footer from "@/components/Footer";
 import AnimatedNumber from "@/components/motion/AnimatedNumber";
 import MagneticButton from "@/components/motion/MagneticButton";
 import Orb from "@/components/motion/Orb";
-import { fmtPKR } from "@/lib/utils";
-import { CheckCircle2, AlertTriangle, Scale, ChevronRight, Clock, FileText, ArrowRight } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Scale, Clock, FileText, ArrowRight, Info, ShieldCheck, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { Bill, OverchargeResult } from "@/types";
+import type { Bill, OverchargeResult, AuditNotice, Confidence } from "@/types";
+
+type ApiPayload = {
+  bill: Bill;
+  overcharges: OverchargeResult[];
+  totalOvercharge: number;
+  notices?: AuditNotice[];
+};
 
 export default function ResultsPage() {
   const params = useParams<{ billId: string }>();
   const router = useRouter();
-  const [data, setData] = useState<{ bill: Bill; overcharges: OverchargeResult[]; totalOvercharge: number } | null>(null);
+  const [data, setData] = useState<ApiPayload | null>(null);
   const [err, setErr] = useState("");
   const [tab, setTab] = useState<Record<string, "en" | "ur">>({});
   const [busy, setBusy] = useState(false);
@@ -35,7 +41,6 @@ export default function ResultsPage() {
       </>
     );
   }
-
   if (!data) {
     return (
       <>
@@ -46,7 +51,7 @@ export default function ResultsPage() {
     );
   }
 
-  const { overcharges, totalOvercharge, bill } = data;
+  const { overcharges, totalOvercharge, bill, notices = [] } = data;
 
   async function generateComplaint() {
     setBusy(true);
@@ -60,6 +65,16 @@ export default function ResultsPage() {
     const { complaintId } = await res.json();
     router.push(`/complaint/${complaintId}`);
   }
+
+  const exactCycle = overcharges.find((o) => o.actual_cycle_days)?.actual_cycle_days;
+  const inferredCycle = overcharges.find((o) => o.estimated_cycle_days)?.estimated_cycle_days;
+  const cycleLabel = exactCycle
+    ? `${exactCycle} d`
+    : inferredCycle
+    ? `~${inferredCycle} d`
+    : bill.billing_days && bill.billing_days > 0
+    ? `${bill.billing_days} d`
+    : "—";
 
   return (
     <>
@@ -77,6 +92,9 @@ export default function ResultsPage() {
               <CheckCircle2 className="mx-auto text-primary-light" size={56} />
               <h1 className="mt-5 text-2xl md:text-3xl font-extrabold text-primary">No NEPRA violations detected</h1>
               <p className="mt-2 text-text-muted">This bill looks clean. Save it for future comparison.</p>
+              {notices.map((n, i) => (
+                <NoticeCard key={i} notice={n} />
+              ))}
               <button onClick={() => router.push("/scan")} className="mt-6 bg-primary text-white px-6 py-3 rounded-xl font-medium hover:bg-primary-light">
                 Audit Another Bill
               </button>
@@ -117,13 +135,17 @@ export default function ResultsPage() {
                         <div className="font-bold">{bill.units_billed}</div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-white/60 uppercase">Days</div>
-                        <div className="font-bold">{bill.billing_days}</div>
+                        <div className="text-[10px] text-white/60 uppercase">Cycle</div>
+                        <div className="font-bold">{cycleLabel}</div>
                       </div>
                     </div>
                   </div>
                 </div>
               </motion.div>
+
+              {notices.map((n, i) => (
+                <NoticeCard key={i} notice={n} />
+              ))}
 
               <div className="mt-6 space-y-4">
                 <AnimatePresence>
@@ -140,14 +162,24 @@ export default function ResultsPage() {
                         className={`relative rounded-2xl bg-white border border-border p-6 shadow-sm overflow-hidden ${sev}`}
                       >
                         <div className="flex items-start justify-between flex-wrap gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <Scale size={18} className="text-primary" />
                               <h3 className="font-bold text-primary text-lg">{o.pattern_name}</h3>
+                              <ConfidenceBadge confidence={o.confidence} />
                             </div>
-                            <span className="mt-2 inline-block text-[11px] uppercase tracking-wider rounded-full bg-primary/10 text-primary px-2.5 py-1 font-semibold">
-                              {o.sro_citation}
-                            </span>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <span className="text-[11px] uppercase tracking-wider rounded-full bg-primary/10 text-primary px-2.5 py-1 font-semibold">
+                                {o.sro_citation}
+                              </span>
+                              {(o.actual_cycle_days || o.estimated_cycle_days) && (
+                                <span className="text-[11px] rounded-full bg-bg text-text-muted px-2.5 py-1">
+                                  {o.actual_cycle_days
+                                    ? `Measured cycle: ${o.actual_cycle_days} days`
+                                    : `Estimated cycle: ~${o.estimated_cycle_days} days`}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="text-3xl md:text-4xl font-extrabold text-danger">
                             <AnimatedNumber to={o.overcharge_amount} prefix="₨ " />
@@ -174,8 +206,10 @@ export default function ResultsPage() {
                         <details className="mt-4 text-xs text-text-muted">
                           <summary className="cursor-pointer select-none">Evidence & calculation</summary>
                           <div className="mt-2 p-3 bg-bg rounded-lg">
-                            Pattern: <code>{o.pattern_code}</code> · Severity: <code>{o.severity}</code><br />
-                            Bill: Rs {bill.total_amount.toLocaleString()} · Units: {bill.units_billed} · Days: {bill.billing_days}
+                            Pattern: <code>{o.pattern_code}</code> · Severity: <code>{o.severity}</code> · Confidence: <code>{o.confidence}</code><br />
+                            Bill: Rs {bill.total_amount.toLocaleString()} · Units: {bill.units_billed}
+                            {o.actual_cycle_days ? <> · Cycle: {o.actual_cycle_days} days (measured)</> : null}
+                            {o.estimated_cycle_days ? <> · Cycle: ~{o.estimated_cycle_days} days (estimated)</> : null}
                           </div>
                         </details>
                       </motion.div>
@@ -214,5 +248,52 @@ export default function ResultsPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
+  if (confidence === "high") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest rounded-full bg-primary-light/10 text-primary-light border border-primary-light/30 px-2 py-0.5 font-bold"
+        title="Verified via your bill history"
+      >
+        <ShieldCheck size={11} /> Verified
+      </span>
+    );
+  }
+  if (confidence === "medium") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest rounded-full bg-warning/15 text-warning border border-warning/40 px-2 py-0.5 font-bold"
+        title="Pattern detected from consumption history"
+      >
+        <Sparkles size={11} /> Inferred
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest rounded-full bg-bg text-text-muted border border-border px-2 py-0.5 font-bold">
+      <Info size={11} /> Early signal
+    </span>
+  );
+}
+
+function NoticeCard({ notice }: { notice: AuditNotice }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="mt-6 rounded-2xl bg-white border border-accent/30 p-5 flex items-start gap-3 shadow-sm"
+    >
+      <div className="h-9 w-9 rounded-lg bg-accent/15 text-accent grid place-items-center shrink-0">
+        <Info size={18} />
+      </div>
+      <div className="text-sm">
+        <div className="font-bold text-primary">{notice.title_english}</div>
+        <p className="mt-1 text-text-muted leading-relaxed">{notice.body_english}</p>
+      </div>
+    </motion.div>
   );
 }

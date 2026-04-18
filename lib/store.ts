@@ -1,4 +1,4 @@
-import type { Bill, OverchargeResult, Complaint, ImpactStats, UserRecord } from "@/types";
+import type { Bill, OverchargeResult, Complaint, ImpactStats, UserRecord, AuditNotice } from "@/types";
 import { uid } from "./utils";
 
 // In-memory store. Seeded with demo data so UI feels "real" without Supabase credentials.
@@ -15,6 +15,7 @@ type DB = {
   users: Map<string, UserRecord>;
   bills: Map<string, Bill>;
   overcharges: Map<string, OverchargeResult[]>; // keyed by bill_id
+  notices: Map<string, AuditNotice[]>;          // keyed by bill_id
   complaints: Map<string, Complaint>;
   impact: ImpactStats;
   billCache: Map<string, FetchedBillCache>; // keyed by ref_hash
@@ -45,6 +46,7 @@ function freshDB(): DB {
     users,
     bills: new Map(),
     overcharges: new Map(),
+    notices: new Map(),
     complaints: new Map(),
     billCache: new Map(),
     impact: {
@@ -65,18 +67,15 @@ function db(): DB {
 
 export const DEMO_USER_ID = "demo-user";
 
-export function insertBill(bill: Omit<Bill, "id" | "created_at" | "billing_days"> & { billing_days?: number }): Bill {
+export function insertBill(bill: Omit<Bill, "id" | "created_at">): Bill {
   const id = uid();
-  const billing_days =
-    bill.billing_days ??
-    Math.max(
-      1,
-      Math.round(
-        (new Date(bill.reading_date_to).getTime() -
-          new Date(bill.reading_date_from).getTime()) /
-          (1000 * 60 * 60 * 24)
-      )
-    );
+  // billing_days is informational only now — cycle length comes from prev bill
+  // or from historical_bills. Populate it only when both endpoints are present.
+  let billing_days: number | undefined = bill.billing_days;
+  if (billing_days == null && bill.reading_date_from && bill.reading_date_to) {
+    const diff = (new Date(bill.reading_date_to).getTime() - new Date(bill.reading_date_from).getTime()) / 86400000;
+    if (isFinite(diff) && diff > 0) billing_days = Math.round(diff);
+  }
   const record: Bill = {
     ...bill,
     id,
@@ -97,6 +96,26 @@ export function listBillsByUser(userId: string): Bill[] {
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+export function findPreviousBillByRef(
+  referenceNumber: string,
+  userId: string,
+  beforeISO: string
+): Bill | null {
+  const refNorm = referenceNumber.replace(/\s+/g, "").toUpperCase();
+  const beforeTs = new Date(beforeISO).getTime();
+  const candidates = Array.from(db().bills.values()).filter((b) => {
+    if (b.user_id !== userId) return false;
+    const bRef = (b.reference_number ?? "").replace(/\s+/g, "").toUpperCase();
+    if (bRef !== refNorm) return false;
+    if (!b.reading_date) return false;
+    const t = new Date(b.reading_date).getTime();
+    return isFinite(t) && t < beforeTs;
+  });
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => new Date(b.reading_date!).getTime() - new Date(a.reading_date!).getTime());
+  return candidates[0];
+}
+
 export function saveOvercharges(billId: string, items: OverchargeResult[]): OverchargeResult[] {
   const stamped = items.map((o) => ({
     ...o,
@@ -110,6 +129,14 @@ export function saveOvercharges(billId: string, items: OverchargeResult[]): Over
 
 export function getOvercharges(billId: string): OverchargeResult[] {
   return db().overcharges.get(billId) ?? [];
+}
+
+export function saveNotices(billId: string, notices: AuditNotice[]): void {
+  db().notices.set(billId, notices);
+}
+
+export function getNotices(billId: string): AuditNotice[] {
+  return db().notices.get(billId) ?? [];
 }
 
 export function insertComplaint(c: Omit<Complaint, "id" | "created_at">): Complaint {

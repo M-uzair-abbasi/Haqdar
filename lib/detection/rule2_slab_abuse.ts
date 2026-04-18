@@ -29,5 +29,6 @@ export function detectSlabAbuse(bill: Bill): OverchargeResult | null {
     explanation_english: `Your reading of ${bill.units_billed} units is suspiciously close to the ${justOverThreshold}-unit slab threshold. Meter readings are often rounded up at these boundaries to push consumers into higher tariff slabs. You are entitled to request a physical meter verification under NEPRA rules.`,
     explanation_urdu: `آپ کی ${bill.units_billed} یونٹس کی ریڈنگ ${justOverThreshold} یونٹس کے سلیب کی حد کے بہت قریب ہے۔ میٹر ریڈنگز اکثر ان حدوں پر اوپر کر دی جاتی ہیں تاکہ صارفین کو اگلے ٹیرف سلیب میں دھکیلا جا سکے۔ NEPRA کے قوانین کے تحت آپ کو فزیکل میٹر کی تصدیق کا حق حاصل ہے۔`,
     severity: "medium",
+    confidence: "medium",
   };
 }

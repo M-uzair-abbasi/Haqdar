@@ -1,4 +1,12 @@
 export type Severity = "low" | "medium" | "high";
+export type Confidence = "high" | "medium" | "low";
+
+export interface HistoricalBillEntry {
+  month: string;   // e.g. "APR 25"
+  units: number;
+  bill: number;
+  payment: number;
+}
 
 export interface Bill {
   id: string;
@@ -6,9 +14,16 @@ export interface Bill {
   disco_name: string;
   reference_number: string;
   units_billed: number;
-  reading_date_from: string;
-  reading_date_to: string;
-  billing_days: number;
+  // Canonical end-of-cycle date (ISO YYYY-MM-DD). Real bills only show this;
+  // cycle length is inferred from prev bills or the embedded history.
+  reading_date: string;
+  bill_month?: string;                     // e.g. "APR 26" from the IESCO header
+  historical_bills?: HistoricalBillEntry[]; // 12-row consumption history from IESCO bills
+  // Legacy fields — retained optionally so older code paths still compile.
+  // reading_date_from mirrors reading_date when unknown; billing_days is 0/undefined when unknown.
+  reading_date_from?: string;
+  reading_date_to?: string;
+  billing_days?: number;
   total_amount: number;
   tariff_category: string;
   reading_type: string;
@@ -28,7 +43,18 @@ export interface OverchargeResult {
   explanation_english: string;
   explanation_urdu: string;
   severity: Severity;
+  confidence: Confidence;
+  actual_cycle_days?: number;
+  estimated_cycle_days?: number;
   detected_at?: string;
+}
+
+export interface AuditNotice {
+  code: "EXTENDED_CYCLE_SKIPPED_NO_HISTORY";
+  title_english: string;
+  title_urdu: string;
+  body_english: string;
+  body_urdu: string;
 }
 
 export interface UserRecord {
