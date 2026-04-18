@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #1B4332;
+  --primary-light: #2D6A4F;
+  --accent: #D4AF37;
+  --danger: #C1121F;
+  --warning: #F59E0B;
+  --bg: #FAFAF9;
+  --surface: #FFFFFF;
+  --text: #0A0A0A;
+  --text-muted: #525252;
+  --border: #E5E5E5;
+  --ink: #0B1410;
+}
+
+* { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+html, body { background: var(--bg); color: var(--text); }
+body { font-feature-settings: "ss01", "cv11"; }
+
+.font-urdu { font-family: "Noto Nastaliq Urdu", serif; direction: rtl; }
+.count-up { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+.sev-high { border-left: 4px solid var(--danger); background: linear-gradient(90deg, rgba(193,18,31,.06), transparent 60%); }
+.sev-medium { border-left: 4px solid var(--warning); background: linear-gradient(90deg, rgba(245,158,11,.08), transparent 60%); }
+.sev-low { border-left: 4px solid #9CA3AF; background: linear-gradient(90deg, rgba(156,163,175,.06), transparent 60%); }
+
+.bg-noise {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(27,67,50,.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(27,67,50,.07) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse at center, #000 40%, transparent 80%);
+}
+.bg-mesh {
+  background:
+    radial-gradient(1200px 600px at 0% 0%, rgba(27,67,50,.28), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(45,106,79,.35), transparent 60%),
+    radial-gradient(700px 400px at 60% 100%, rgba(212,175,55,.18), transparent 60%),
+    linear-gradient(180deg, #081C12 0%, #0B2A1C 60%, #081C12 100%);
+}
+.bg-mesh-light {
+  background:
+    radial-gradient(1200px 600px at 0% 0%, rgba(45,106,79,.08), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(212,175,55,.10), transparent 60%),
+    #FAFAF9;
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,.55));
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid rgba(255,255,255,.55);
+  box-shadow: 0 30px 80px -40px rgba(11,20,16,.35);
+}
+.glass-dark {
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 30px 80px -40px rgba(0,0,0,.6);
+}
+
+.perspective { perspective: 1200px; }
+.preserve-3d { transform-style: preserve-3d; }
+.float-y { animation: floatY 6s ease-in-out infinite; }
+@keyframes floatY { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-10px) } }
+
+.shimmer {
+  background: linear-gradient(100deg, transparent 35%, rgba(212,175,55,.35) 50%, transparent 65%);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+}
+@keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+
+.marquee { display: flex; gap: 3rem; animation: marquee 30s linear infinite; width: max-content; }
+@keyframes marquee { 0% { transform: translateX(0) } 100% { transform: translateX(-50%) } }
+
+.input-ring:focus { outline: none; box-shadow: 0 0 0 4px rgba(45,106,79,.18), inset 0 0 0 1px rgba(45,106,79,.6); }
+
+.link-gold { position: relative; }
+.link-gold::after {
+  content: ""; position: absolute; left: 0; bottom: -3px; height: 2px; width: 0;
+  background: var(--accent); transition: width .3s ease;
+}
+.link-gold:hover::after { width: 100%; }
+
+.text-gradient {
+  background: linear-gradient(120deg, #1B4332, #2D6A4F 40%, #D4AF37 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.text-gradient-light {
+  background: linear-gradient(120deg, #ffffff, #E7D6A0 60%, #D4AF37 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.tilt-card { transition: transform .2s ease, box-shadow .2s ease; }
+.tilt-card:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -20px rgba(27,67,50,.35); }
+
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { scrollbar-width: none; }
+
+@media (max-width: 640px) { h1 { line-height: 1.05; } }
