@@ -205,8 +205,8 @@ export default function Home() {
           <div className="mt-14 grid md:grid-cols-3 gap-6">
             {[
               { name: "Free Trial", price: "₨ 0", period: "14 days", features: ["All features", "1 bill audit per day", "PDF complaint generation"] },
-              { name: "Pro", price: "₨ 99", period: "per month", highlight: true, features: ["Unlimited bill audits", "Priority complaint filing", "Refund tracking timeline", "Bilingual PDF exports"] },
-              { name: "Business", price: "₨ 299", period: "per meter / mo", features: ["For factories, schools, hospitals", "Multi-meter dashboards", "Bulk CSV upload", "Priority support"] },
+              { name: "Pro", price: "₨ 60", period: "per month", highlight: true, features: ["Unlimited bill audits", "Priority complaint filing", "Refund tracking timeline", "Bilingual PDF exports"] },
+              { name: "Business", price: "₨ 120", period: "per meter / mo", features: ["For factories, schools, hospitals", "Multi-meter dashboards", "Bulk CSV upload", "Priority support"] },
             ].map((p, i) => (
               <ScrollReveal key={i} delay={i * 0.1}>
                 <TiltCard intensity={6}>

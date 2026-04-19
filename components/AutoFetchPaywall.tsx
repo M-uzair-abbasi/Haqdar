@@ -38,7 +38,7 @@ export function AutoFetchPaywall() {
           href="/pricing"
           className="flex-1 text-center rounded-xl bg-primary text-white px-4 py-3 font-bold hover:bg-primary-light inline-flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
         >
-          <Zap size={16} /> Upgrade to Pro — Rs 99/month
+          <Zap size={16} /> Upgrade to Pro — Rs 60/month
         </Link>
         <Link
           href="/#pricing"

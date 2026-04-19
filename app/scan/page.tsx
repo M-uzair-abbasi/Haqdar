@@ -140,8 +140,8 @@ export default function ScanPage() {
 
   async function submit() {
     setErr("");
-    if (!form.referenceNumber || !form.units || !form.readingDate || !form.amount) {
-      setErr("Please fill the required fields.");
+    if (!form.referenceNumber || !form.units || !form.amount) {
+      setErr("Please fill reference number, units, and amount.");
       return;
     }
     setSubmitting(true);
@@ -305,7 +305,7 @@ export default function ScanPage() {
                         </div>
                       )}
                     </div>
-                    <Field label="Reading Date (end of cycle)" urdu="ریڈنگ کی تاریخ" value={form.readingDate} onChange={(v) => setForm({ ...form, readingDate: v })} type="date" help="The date printed on this bill" />
+                    <Field label="Reading Date (optional)" urdu="ریڈنگ کی تاریخ" value={form.readingDate} onChange={(v) => setForm({ ...form, readingDate: v })} type="date" help="End-of-cycle date printed on this bill. Leave blank if unknown — Rule #1 will skip cleanly." />
                   </div>
                   <Field label="Bill Month (optional)" urdu="بل کا مہینہ" value={form.billMonth} onChange={(v) => setForm({ ...form, billMonth: v })} placeholder="e.g. APR 26" help="Used for seasonal cross-check when Rule #1 falls back to Tier 1 inference" />
                   <Field label="Total Amount (PKR)" urdu="کل رقم" value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} placeholder="e.g. 12500" type="number" help="Amount you are being asked to pay" />

@@ -20,7 +20,11 @@ export async function POST(req: NextRequest) {
     const refNo: string = body.referenceNumber ?? "";
 
     // Canonical end-of-cycle date. Accept `readingDate` (new) or `dateTo` (legacy).
-    const readingDate: string = body.readingDate ?? body.dateTo ?? "";
+    // If the scraper couldn't extract it and the user skipped it on the form,
+    // fall back to today so downstream storage + UI have something to render.
+    // The Tier 3 guard (from !== to) will still cause Rule #1 to skip cleanly.
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const readingDate: string = body.readingDate || body.dateTo || todayISO;
     // Optional cycle start date. When present, enables Tier 3 (HIGH confidence)
     // detection directly from the bill's own dates.
     const dateFrom: string | undefined = body.dateFrom || undefined;

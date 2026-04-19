@@ -45,10 +45,10 @@ export default function PricingPage() {
               <Plan name="Free" price="₨ 0" period="forever" features={["Manual bill entry", "5 NEPRA rule checks", "PDF complaint generation"]} cta="Stay on Free" onClick={() => setTier("free")} />
             </TiltCard>
             <TiltCard intensity={6}>
-              <Plan highlight name="Pro" price="₨ 99" period="per month" features={["Live auto-fetch (IESCO now, LESCO/MEPCO/GEPCO soon)", "Unlimited bill audits", "Priority complaint filing", "Refund tracking timeline", "Bilingual PDF exports"]} cta="Switch to Pro" onClick={() => setTier("pro")} icon={<Crown size={14} />} />
+              <Plan highlight name="Pro" price="₨ 60" period="per month" features={["Live auto-fetch (IESCO now, LESCO/MEPCO/GEPCO soon)", "Unlimited bill audits", "Priority complaint filing", "Refund tracking timeline", "Bilingual PDF exports"]} cta="Switch to Pro" onClick={() => setTier("pro")} icon={<Crown size={14} />} />
             </TiltCard>
             <TiltCard intensity={5}>
-              <Plan name="Business" price="₨ 299" period="per meter / mo" features={["Everything in Pro", "Multi-meter dashboards", "Bulk CSV upload", "Priority support"]} cta="Switch to Business" onClick={() => setTier("business")} icon={<Zap size={14} />} />
+              <Plan name="Business" price="₨ 120" period="per meter / mo" features={["Everything in Pro", "Multi-meter dashboards", "Bulk CSV upload", "Priority support"]} cta="Switch to Business" onClick={() => setTier("business")} icon={<Zap size={14} />} />
             </TiltCard>
           </div>
 

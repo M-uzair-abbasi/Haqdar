@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           error: "SUBSCRIPTION_REQUIRED",
-          message: "Auto-fetch is a Pro feature. Upgrade to Pro for Rs 99/month to auto-fetch your bill.",
+          message: "Auto-fetch is a Pro feature. Upgrade to Pro for Rs 60/month to auto-fetch your bill.",
           upgrade_url: "/pricing",
           current_tier: tier || "free",
         },
