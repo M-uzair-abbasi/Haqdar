@@ -282,6 +282,28 @@ export async function scrapeIescoBill(referenceNumber: string): Promise<ScrapedB
   // 2) Fallback: ASP.NET WebForms postback (current portal flow).
   if (!html) html = await fetchPostbackBill(normalized);
 
+  return parseIescoHtml(html);
+}
+
+/**
+ * Parse already-fetched IESCO bill HTML into a ScrapedBill. Exported so the
+ * client-side CORS-proxy fallback can fetch the HTML from the user's browser
+ * (on a Pakistani IP) and POST it here for parsing — avoiding Vercel's
+ * outbound network which IESCO firewalls.
+ */
+export function parseIescoHtml(html: string): ScrapedBill {
+  if (!html) {
+    throw new IescoScraperError("PARSING_FAILED", "Empty HTML passed to parser.", 400, "empty html");
+  }
+  if (!isBillHtml(html)) {
+    throw new IescoScraperError(
+      "NOT_FOUND",
+      "Reference number not found on IESCO portal.",
+      404,
+      `non-bill ${html.length}B`
+    );
+  }
+
   const $ = cheerio.load(html);
 
   try {

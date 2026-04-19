@@ -10,15 +10,43 @@ interface Props {
   onFetchSuccess: (bill: ScrapedBill) => void;
 }
 
+// Public CORS proxies used when Vercel's server can't reach IESCO.
+// The user's browser does the fetch from their Pakistani IP, bypassing
+// the cloud firewall. Two proxies for failover.
+const CORS_PROXIES = [
+  (target: string) => `https://corsproxy.io/?${encodeURIComponent(target)}`,
+  (target: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
+];
+
+function normalizeRef(raw: string): string {
+  const cleaned = (raw ?? "").replace(/\s+/g, "").toUpperCase();
+  return cleaned.replace(/[A-Z]$/, "");
+}
+
+async function fetchViaProxy(target: string): Promise<string | null> {
+  for (const mkUrl of CORS_PROXIES) {
+    try {
+      const res = await fetch(mkUrl(target), { method: "GET" });
+      if (!res.ok) continue;
+      const html = await res.text();
+      if (html && html.length > 500) return html;
+    } catch {
+      // try next proxy
+    }
+  }
+  return null;
+}
+
 export function AutoFetchCard({ userId, onFetchSuccess }: Props) {
   const [disco, setDisco] = useState<string>("IESCO");
   const [refNo, setRefNo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  async function handleFetch() {
-    setError(null);
-    setLoading(true);
+  // Server-side direct scrape first (fast when it works).
+  async function tryServerFetch(): Promise<{ ok: true; bill: ScrapedBill } | { ok: false; networkError: boolean; errorText: string }> {
+    setLoadingStage("Fetching from IESCO…");
     try {
       const res = await fetch("/api/fetchBill", {
         method: "POST",
@@ -26,16 +54,79 @@ export function AutoFetchCard({ userId, onFetchSuccess }: Props) {
         body: JSON.stringify({ disco, referenceNumber: refNo, userId }),
       });
       const data = await res.json();
-      if (!data.success) {
-        const base = data.message || "Could not fetch bill. Please try manual entry.";
-        setError(data.debug ? `${base} (${data.debug})` : base);
+      if (data.success) return { ok: true, bill: data.bill };
+      const base = data.message || "Could not fetch bill.";
+      return {
+        ok: false,
+        networkError: data.error === "NETWORK_ERROR" || data.error === "INTERNAL_ERROR",
+        errorText: data.debug ? `${base} (${data.debug})` : base,
+      };
+    } catch {
+      return { ok: false, networkError: true, errorText: "Network error talking to our server." };
+    }
+  }
+
+  // Browser-side fallback: fetch IESCO HTML via a public CORS proxy using
+  // the user's Pakistani IP, then POST to /api/parseBill for server-side parsing.
+  async function tryClientFetch(): Promise<{ ok: true; bill: ScrapedBill } | { ok: false; errorText: string }> {
+    const normRef = normalizeRef(refNo);
+    if (!/^\d{14}$/.test(normRef)) {
+      return { ok: false, errorText: "Reference number must be 14 digits." };
+    }
+    setLoadingStage("Fetching from IESCO via your browser…");
+    const targetUrl = `https://bill.pitc.com.pk/iescobill/general?refno=${normRef}`;
+    const html = await fetchViaProxy(targetUrl);
+    if (!html) {
+      return {
+        ok: false,
+        errorText:
+          "Could not reach IESCO from your browser either. CORS proxy may be down — please try manual entry.",
+      };
+    }
+    setLoadingStage("Parsing bill on our server…");
+    try {
+      const res = await fetch("/api/parseBill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disco, referenceNumber: refNo, html, userId }),
+      });
+      const data = await res.json();
+      if (data.success) return { ok: true, bill: data.bill };
+      const base = data.message || "Could not parse bill HTML.";
+      return { ok: false, errorText: data.debug ? `${base} (${data.debug})` : base };
+    } catch {
+      return { ok: false, errorText: "Failed to reach our parser endpoint." };
+    }
+  }
+
+  async function handleFetch() {
+    setError(null);
+    setLoading(true);
+    setLoadingStage("");
+    try {
+      // Stage 1: server-side direct fetch (fast path).
+      const server = await tryServerFetch();
+      if (server.ok) {
+        onFetchSuccess(server.bill);
         return;
       }
-      onFetchSuccess(data.bill);
+      // Stage 2: network-level block (e.g. Vercel→IESCO) → user's browser does it.
+      if (server.networkError) {
+        setLoadingStage("Server blocked. Retrying from your browser…");
+        const client = await tryClientFetch();
+        if (client.ok) {
+          onFetchSuccess(client.bill);
+          return;
+        }
+        setError(client.errorText);
+      } else {
+        setError(server.errorText);
+      }
     } catch {
       setError("Network error. Please try manual entry.");
     } finally {
       setLoading(false);
+      setLoadingStage("");
     }
   }
 
@@ -119,7 +210,7 @@ export function AutoFetchCard({ userId, onFetchSuccess }: Props) {
         >
           {loading ? (
             <>
-              <Loader2 className="animate-spin" size={16} /> Fetching from IESCO…
+              <Loader2 className="animate-spin" size={16} /> {loadingStage || "Fetching from IESCO…"}
             </>
           ) : (
             <>
