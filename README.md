@@ -184,8 +184,6 @@ types/index.ts               — Bill, OverchargeResult, AuditNotice, Complaint,
 ---
 
 ## What's not built (honest)
-
-- **Real Supabase** — in-memory store is used instead. Module shape mirrors the SQL schema in the original brief; swapping is a straight replacement in `lib/store.ts`.
 - **Real payments** — subscription UI is marketing-only.
 - **Authentication** — single demo user.
 - **Fully automated NEPRA submission** — NEPRA's portal requires CAPTCHA + OTP, so we copy the text + open the portal. Honest and defensible for the pitch.
