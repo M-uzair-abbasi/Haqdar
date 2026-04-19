@@ -58,6 +58,15 @@ function summarizeAttempts(attempts: ProxyAttempt[]): string {
   return attempts.map((a) => `${a.name}:${a.status}/${a.size}B`).join(", ");
 }
 
+function corsBlockedMessage(): string {
+  return (
+    "Auto-fetch isn't available on this deployment: Vercel's server IP is " +
+    "firewalled by IESCO, and your browser's CORS policy blocks the direct " +
+    "fallback too. This works on localhost (Pakistani IP). Please use manual " +
+    "entry below."
+  );
+}
+
 // Extract ASP.NET WebForms tokens from the landing page HTML so we can
 // POST the ref number back to IESCO (it's a two-step postback, not a GET).
 function extractAspxTokens(html: string): { viewState: string; viewStateGen: string; eventValidation: string; rvt: string } | null {
@@ -128,7 +137,7 @@ export function AutoFetchCard({ userId, onFetchSuccess }: Props) {
     if (!landing.html) {
       return {
         ok: false,
-        errorText: `CORS proxies are down or blocked. Landing attempts: ${summarizeAttempts(landing.attempts)}. Please try manual entry.`,
+        errorText: corsBlockedMessage(),
       };
     }
 
@@ -136,7 +145,7 @@ export function AutoFetchCard({ userId, onFetchSuccess }: Props) {
     if (!tokens) {
       return {
         ok: false,
-        errorText: `IESCO landing page didn't return expected form tokens. Attempts: ${summarizeAttempts(landing.attempts)}.`,
+        errorText: corsBlockedMessage(),
       };
     }
 
@@ -160,16 +169,10 @@ export function AutoFetchCard({ userId, onFetchSuccess }: Props) {
       body: body.toString(),
     });
     if (!submitted.html) {
-      return {
-        ok: false,
-        errorText: `IESCO postback failed via every proxy. Attempts: ${summarizeAttempts(submitted.attempts)}.`,
-      };
+      return { ok: false, errorText: corsBlockedMessage() };
     }
     if (!/CONSUMER ID/i.test(submitted.html) || !/REFERENCE NO/i.test(submitted.html)) {
-      return {
-        ok: false,
-        errorText: `IESCO returned a page without bill markers. Attempts: ${summarizeAttempts(submitted.attempts)}. Snippet: ${submitted.html.slice(0, 80).replace(/\s+/g, " ")}`,
-      };
+      return { ok: false, errorText: corsBlockedMessage() };
     }
 
     return await parseOnServer(submitted.html);
