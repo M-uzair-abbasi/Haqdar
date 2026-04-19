@@ -27,7 +27,8 @@ export function AutoFetchCard({ userId, onFetchSuccess }: Props) {
       });
       const data = await res.json();
       if (!data.success) {
-        setError(data.message || "Could not fetch bill. Please try manual entry.");
+        const base = data.message || "Could not fetch bill. Please try manual entry.";
+        setError(data.debug ? `${base} (${data.debug})` : base);
         return;
       }
       onFetchSuccess(data.bill);

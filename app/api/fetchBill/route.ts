@@ -81,14 +81,25 @@ export async function POST(req: NextRequest) {
         NETWORK_ERROR: 503,
         PARSING_FAILED: 500,
       };
+      console.error("[fetchBill] scraper error:", err.code, err.debugHint ?? "(no hint)");
       return NextResponse.json(
-        { success: false, error: err.code, message: err.message },
+        {
+          success: false,
+          error: err.code,
+          message: err.message,
+          ...(err.debugHint ? { debug: err.debugHint } : {}),
+        },
         { status: statusMap[err.code] || 500 }
       );
     }
-    console.error("fetchBill unexpected error:", err);
+    console.error("[fetchBill] unexpected error:", err?.name, err?.message, err?.stack);
     return NextResponse.json(
-      { success: false, error: "INTERNAL_ERROR", message: "An unexpected error occurred. Please try manual entry." },
+      {
+        success: false,
+        error: "INTERNAL_ERROR",
+        message: "An unexpected error occurred. Please try manual entry.",
+        debug: `${err?.name ?? "err"}: ${err?.message ?? "unknown"}`,
+      },
       { status: 500 }
     );
   }

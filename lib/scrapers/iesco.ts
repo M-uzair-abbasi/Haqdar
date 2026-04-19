@@ -64,7 +64,8 @@ export class IescoScraperError extends Error {
   constructor(
     public code: IescoErrorCode,
     message: string,
-    public statusCode?: number
+    public statusCode?: number,
+    public debugHint?: string
   ) {
     super(message);
     this.name = "IescoScraperError";
@@ -115,17 +116,26 @@ async function fetchGetBill(normalized: string): Promise<string | null> {
   try {
     response = await fetch(url, { headers: BASE_HEADERS, redirect: "follow", signal: AbortSignal.timeout(15000) });
   } catch (err: any) {
+    console.error("[iesco] GET fetch failed:", err?.name, err?.message);
     if (err?.name === "AbortError" || err?.name === "TimeoutError") {
-      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504);
+      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504, "GET timeout");
     }
-    throw new IescoScraperError("NETWORK_ERROR", `Could not reach IESCO server: ${err?.message ?? "unknown"}`, 503);
+    throw new IescoScraperError("NETWORK_ERROR", `Could not reach IESCO server: ${err?.message ?? "unknown"}`, 503, `GET ${err?.name ?? "err"}`);
   }
   if (response.status === 429) {
-    throw new IescoScraperError("RATE_LIMITED", "Too many requests to IESCO. Please wait a moment.", 429);
+    console.error("[iesco] GET 429 rate-limited");
+    throw new IescoScraperError("RATE_LIMITED", "Too many requests to IESCO. Please wait a moment.", 429, "GET 429");
   }
-  if (!response.ok) return null;
+  if (!response.ok) {
+    console.error("[iesco] GET not-ok:", response.status);
+    return null;
+  }
   const html = await response.text();
-  return isBillHtml(html) ? html : null;
+  const ok = isBillHtml(html);
+  if (!ok) {
+    console.error("[iesco] GET non-bill HTML:", html.length, "bytes, first100:", html.slice(0, 100).replace(/\s+/g, " "));
+  }
+  return ok ? html : null;
 }
 
 // Current IESCO portal uses ASP.NET WebForms — emulate the browser POST-back.
@@ -191,21 +201,35 @@ async function fetchPostbackBill(normalized: string): Promise<string> {
       signal: AbortSignal.timeout(20000),
     });
   } catch (err: any) {
+    console.error("[iesco] POST fetch failed:", err?.name, err?.message);
     if (err?.name === "AbortError" || err?.name === "TimeoutError") {
-      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504);
+      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504, "POST timeout");
     }
-    throw new IescoScraperError("NETWORK_ERROR", `Could not submit to IESCO: ${err?.message ?? "unknown"}`, 503);
+    throw new IescoScraperError("NETWORK_ERROR", `Could not submit to IESCO: ${err?.message ?? "unknown"}`, 503, `POST ${err?.name ?? "err"}`);
   }
 
   if (submitted.status === 429) {
-    throw new IescoScraperError("RATE_LIMITED", "Too many requests to IESCO. Please wait a moment.", 429);
+    console.error("[iesco] POST 429 rate-limited");
+    throw new IescoScraperError("RATE_LIMITED", "Too many requests to IESCO. Please wait a moment.", 429, "POST 429");
   }
   if (!submitted.ok) {
-    throw new IescoScraperError("NETWORK_ERROR", `IESCO returned HTTP ${submitted.status}`, submitted.status);
+    console.error("[iesco] POST not-ok:", submitted.status);
+    throw new IescoScraperError("NETWORK_ERROR", `IESCO returned HTTP ${submitted.status}`, submitted.status, `POST HTTP ${submitted.status}`);
   }
   const html = await submitted.text();
   if (!isBillHtml(html)) {
-    throw new IescoScraperError("NOT_FOUND", "Reference number not found on IESCO portal.");
+    console.error(
+      "[iesco] POST non-bill HTML:",
+      html.length,
+      "bytes, first150:",
+      html.slice(0, 150).replace(/\s+/g, " ")
+    );
+    throw new IescoScraperError(
+      "NOT_FOUND",
+      "Reference number not found on IESCO portal.",
+      404,
+      `POST non-bill ${html.length}B`
+    );
   }
   return html;
 }
