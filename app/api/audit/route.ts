@@ -9,6 +9,7 @@ import {
   DEMO_USER_ID,
 } from "@/lib/store";
 import { runAllDetections, getTotalOvercharge } from "@/lib/detection";
+import { resolveReadingDateFrom } from "@/lib/detection/dateResolver";
 import type { HistoricalBillEntry } from "@/types";
 
 export async function POST(req: NextRequest) {
@@ -34,6 +35,19 @@ export async function POST(req: NextRequest) {
         }))
       : undefined;
 
+    // Look up stored prior bill first so we can resolve cycle start before insert.
+    const previousBill = refNo && readingDate
+      ? findPreviousBillByRef(refNo, userId, readingDate)
+      : null;
+
+    // Resolve the cycle-start date with provenance. Only user/history sources
+    // are eligible for Tier 3 exact detection — estimated is DISPLAY ONLY.
+    const resolved = resolveReadingDateFrom(
+      dateFrom ?? null,
+      previousBill?.reading_date ?? null,
+      readingDate
+    );
+
     const bill = insertBill({
       user_id: userId,
       disco_name: body.disco,
@@ -42,11 +56,15 @@ export async function POST(req: NextRequest) {
       reading_date: readingDate,
       bill_month: body.billMonth ?? undefined,
       historical_bills: historical,
-      // Persist whatever dateFrom value was used — user-typed, auto-filled
-      // from history, or null. Stored as reading_date_to when absent so legacy
-      // code paths that read reading_date_from still see a valid ISO date.
-      reading_date_from: dateFrom ?? readingDate,
+      // reading_date_from is the trust-worthy cycle start for detection.
+      // Collapse to reading_date when source==="estimated" so the Tier 3 guard
+      // rejects it and Rule #1 falls through to Tier 1 / notice.
+      reading_date_from: resolved.useForExactDetection ? resolved.date : readingDate,
       reading_date_to: readingDate,
+      // Always persist the resolver's output + source so the UI can show the
+      // provenance badge and the PDF can render a "billing period" line.
+      resolved_date_from: resolved.date,
+      date_from_source: resolved.source,
       total_amount: Number(body.amount),
       tariff_category: body.tariff,
       reading_type: body.readingType,
@@ -54,11 +72,6 @@ export async function POST(req: NextRequest) {
       pug_charge: Number(body.pugCharge || 0),
       raw_input: body,
     });
-
-    // HIGH-confidence path: look up a stored previous bill for same ref + user.
-    const previousBill = refNo && readingDate
-      ? findPreviousBillByRef(refNo, userId, readingDate)
-      : null;
 
     const { overcharges, notices } = runAllDetections(bill, { previousBill });
     const stamped = saveOvercharges(bill.id, overcharges);

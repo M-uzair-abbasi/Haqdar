@@ -139,6 +139,7 @@ export default function ResultsPage() {
                         <div className="font-bold">{cycleLabel}</div>
                       </div>
                     </div>
+                    <DateSourceBadge source={bill.date_from_source} resolvedDate={bill.resolved_date_from} />
                   </div>
                 </div>
               </motion.div>
@@ -276,6 +277,33 @@ function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
     <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest rounded-full bg-bg text-text-muted border border-border px-2 py-0.5 font-bold">
       <Info size={11} /> Early signal
     </span>
+  );
+}
+
+function DateSourceBadge({ source, resolvedDate }: { source?: "user" | "history" | "estimated"; resolvedDate?: string }) {
+  if (!source) return null;
+  if (source === "user") {
+    return (
+      <div className="mt-3 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest rounded-full bg-primary-light/20 text-accent border border-primary-light/40 px-2.5 py-1 font-bold">
+        <CheckCircle2 size={11} /> Your input
+      </div>
+    );
+  }
+  if (source === "history") {
+    return (
+      <div className="mt-3 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest rounded-full bg-white/15 text-white border border-white/30 px-2.5 py-1 font-bold">
+        <CheckCircle2 size={11} /> From your previous audit
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3 inline-flex items-start gap-1.5 text-[10px] rounded-xl bg-warning/25 text-white border border-warning/50 px-2.5 py-1.5 font-semibold max-w-[260px]">
+      <Info size={11} className="mt-0.5 shrink-0" />
+      <span className="leading-snug normal-case">
+        Estimated — enter your previous bill's reading date for precise detection
+        {resolvedDate ? <span className="block opacity-80 mt-0.5">Assumed: {resolvedDate}</span> : null}
+      </span>
+    </div>
   );
 }
 

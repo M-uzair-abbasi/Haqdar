@@ -15,6 +15,7 @@ export interface ScrapedBill {
   issue_date: string;
   due_date: string;
   reading_date: string;
+  connection_date: string;
   connected_load: string;
   meter_number: string;
   previous_reading: number;
@@ -221,12 +222,66 @@ export async function scrapeIescoBill(referenceNumber: string): Promise<ScrapedB
   const $ = cheerio.load(html);
 
   try {
-    const topRow = $("table.maintable").first().find("tr.content").first().find("td");
-    const connected_load = cleanText(topRow.eq(1));
-    const bill_month = cleanText(topRow.eq(3));
-    const reading_date = cleanText(topRow.eq(4));
-    const issue_date = cleanText(topRow.eq(5));
-    const due_date = cleanText(topRow.eq(6));
+    // Header-label-based column mapping. Handles rowspan/colspan variations
+    // that used to break the previous fixed-index approach.
+    let connected_load = "";
+    let bill_month = "";
+    let reading_date = "";
+    let issue_date = "";
+    let due_date = "";
+    let connection_date = "";
+
+    $("table.maintable").first().find("tr").each((_: number, tr: any) => {
+      const $tr = $(tr);
+      const headers = $tr.find("h4").map((__: number, h: any) => cleanText($(h)).toUpperCase()).get();
+      const looksLikeHeaderRow =
+        headers.some((h: string) => h.includes("BILL MONTH")) &&
+        headers.some((h: string) => h.includes("READING DATE"));
+      if (!looksLikeHeaderRow) return;
+
+      const labelToIndex: Record<string, number> = {};
+      $tr.find("td").each((i: number, td: any) => {
+        const label = cleanText($(td).find("h4").first()).toUpperCase();
+        if (label) labelToIndex[label] = i;
+      });
+
+      const valueRow = $tr.nextAll("tr.content").first();
+      const valueCells = valueRow.find("td");
+      const getVal = (label: string): string => {
+        const idx = labelToIndex[label];
+        if (idx === undefined) return "";
+        return cleanText(valueCells.eq(idx));
+      };
+
+      connection_date = getVal("CONNECTION DATE");
+      connected_load = getVal("CONNECTED LOAD");
+      bill_month = getVal("BILL MONTH");
+      reading_date = getVal("READING DATE");
+      issue_date = getVal("ISSUE DATE");
+      due_date = getVal("DUE DATE");
+    });
+
+    // Regex fallback if DOM-based extraction came up short.
+    if (!reading_date) {
+      const m = html.match(/READING DATE[^0-9]*(\d{1,2}\s+[A-Z]{3}\s+\d{2,4})/i);
+      if (m) reading_date = m[1];
+    }
+    if (!issue_date) {
+      const m = html.match(/ISSUE DATE[^0-9]*(\d{1,2}\s+[A-Z]{3}\s+\d{2,4})/i);
+      if (m) issue_date = m[1];
+    }
+    if (!due_date) {
+      const m = html.match(/DUE DATE[^0-9]*(\d{1,2}\s+[A-Z]{3}\s+\d{2,4})/i);
+      if (m) due_date = m[1];
+    }
+    if (!bill_month) {
+      const m = html.match(/BILL MONTH[^A-Z]*([A-Z]{3}\s+\d{2,4})/i);
+      if (m) bill_month = m[1];
+    }
+    if (!connection_date) {
+      const m = html.match(/CONNECTION DATE[^0-9]*(\d{1,2}\s+[A-Z]{3}\s+\d{2,4})/i);
+      if (m) connection_date = m[1];
+    }
 
     const nestable1Rows = $("table.nestable1 tr.content");
     const consumer_id = cleanText(nestable1Rows.eq(0).find("td").eq(0));
@@ -351,6 +406,7 @@ export async function scrapeIescoBill(referenceNumber: string): Promise<ScrapedB
       issue_date,
       due_date,
       reading_date,
+      connection_date,
       connected_load,
       meter_number,
       previous_reading,

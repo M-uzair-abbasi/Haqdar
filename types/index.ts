@@ -19,6 +19,10 @@ export interface Bill {
   reading_date: string;
   bill_month?: string;                     // e.g. "APR 26" from the IESCO header
   historical_bills?: HistoricalBillEntry[]; // 12-row consumption history from IESCO bills
+  // Resolved cycle start + provenance (set by lib/detection/dateResolver.ts).
+  // `date_from_source === "estimated"` must NOT be used for Rule #1 detection.
+  resolved_date_from?: string;                     // ISO YYYY-MM-DD, always populated when reading_date is known
+  date_from_source?: "user" | "history" | "estimated";
   // Legacy fields — retained optionally so older code paths still compile.
   // reading_date_from mirrors reading_date when unknown; billing_days is 0/undefined when unknown.
   reading_date_from?: string;
