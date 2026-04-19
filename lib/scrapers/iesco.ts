@@ -1,10 +1,45 @@
 import "./_polyfill"; // MUST be first — stubs File/FormData/Blob for Node 18 before undici loads
 import * as cheerio from "cheerio";
 import { createHash } from "crypto";
+import { Agent, fetch as undiciFetch } from "undici";
 
 const IESCO_BASE_URL = "https://bill.pitc.com.pk/iescobill/general";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+// Custom undici Agent:
+//   • rejectUnauthorized:false  — tolerates IESCO's PITC cert chain which
+//                                 sometimes fails strict verification on Node 20.
+//   • autoSelectFamily:true     — prefers IPv4 if IPv6 path hangs (common cause
+//                                 of `fetch failed` at undici level on Vercel).
+//   • explicit timeouts         — so we surface a specific error instead of
+//                                 Node's generic `TypeError: fetch failed`.
+const iescoAgent = new Agent({
+  connect: {
+    rejectUnauthorized: false,
+    timeout: 10_000,
+  },
+  headersTimeout: 20_000,
+  bodyTimeout: 20_000,
+  pipelining: 0,
+  autoSelectFamily: true,
+  autoSelectFamilyAttemptTimeout: 3_000,
+} as any);
+
+// Wrapper that threads the custom dispatcher onto every IESCO request.
+async function pitcFetch(url: string, init: any = {}): Promise<Response> {
+  return undiciFetch(url, { ...init, dispatcher: iescoAgent }) as unknown as Response;
+}
+
+function causeSummary(err: any): string {
+  const parts: string[] = [];
+  if (err?.name) parts.push(err.name);
+  if (err?.code) parts.push(`code=${err.code}`);
+  if (err?.cause?.code) parts.push(`causeCode=${err.cause.code}`);
+  if (err?.cause?.name && err?.cause?.name !== err?.name) parts.push(`causeName=${err.cause.name}`);
+  if (err?.cause?.message) parts.push(`causeMsg=${String(err.cause.message).slice(0, 120)}`);
+  return parts.join(" ");
+}
 
 export interface ScrapedBill {
   reference_number: string;
@@ -114,13 +149,14 @@ async function fetchGetBill(normalized: string): Promise<string | null> {
   const url = `${IESCO_BASE_URL}?refno=${normalized}`;
   let response: Response;
   try {
-    response = await fetch(url, { headers: BASE_HEADERS, redirect: "follow", signal: AbortSignal.timeout(15000) });
+    response = await pitcFetch(url, { headers: BASE_HEADERS, redirect: "follow", signal: AbortSignal.timeout(15000) });
   } catch (err: any) {
-    console.error("[iesco] GET fetch failed:", err?.name, err?.message);
+    const summary = causeSummary(err);
+    console.error("[iesco] GET fetch failed:", err?.name, err?.message, "|", summary);
     if (err?.name === "AbortError" || err?.name === "TimeoutError") {
-      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504, "GET timeout");
+      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504, `GET timeout ${summary}`);
     }
-    throw new IescoScraperError("NETWORK_ERROR", `Could not reach IESCO server: ${err?.message ?? "unknown"}`, 503, `GET ${err?.name ?? "err"}`);
+    throw new IescoScraperError("NETWORK_ERROR", `Could not reach IESCO server: ${err?.message ?? "unknown"}`, 503, `GET ${summary || err?.name || "err"}`);
   }
   if (response.status === 429) {
     console.error("[iesco] GET 429 rate-limited");
@@ -143,12 +179,14 @@ async function fetchPostbackBill(normalized: string): Promise<string> {
   const landingUrl = "https://bill.pitc.com.pk/iescobill";
   let landing: Response;
   try {
-    landing = await fetch(landingUrl, { headers: BASE_HEADERS, redirect: "follow", signal: AbortSignal.timeout(15000) });
+    landing = await pitcFetch(landingUrl, { headers: BASE_HEADERS, redirect: "follow", signal: AbortSignal.timeout(15000) });
   } catch (err: any) {
+    const summary = causeSummary(err);
+    console.error("[iesco] landing GET failed:", err?.name, err?.message, "|", summary);
     if (err?.name === "AbortError" || err?.name === "TimeoutError") {
-      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504);
+      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504, `landing timeout ${summary}`);
     }
-    throw new IescoScraperError("NETWORK_ERROR", `Could not reach IESCO landing: ${err?.message ?? "unknown"}`, 503);
+    throw new IescoScraperError("NETWORK_ERROR", `Could not reach IESCO landing: ${err?.message ?? "unknown"}`, 503, `landing ${summary || err?.name || "err"}`);
   }
   if (!landing.ok) throw new IescoScraperError("NETWORK_ERROR", `IESCO landing returned HTTP ${landing.status}`, landing.status);
 
@@ -187,7 +225,7 @@ async function fetchPostbackBill(normalized: string): Promise<string> {
 
   let submitted: Response;
   try {
-    submitted = await fetch(landingUrl, {
+    submitted = await pitcFetch(landingUrl, {
       method: "POST",
       headers: {
         ...BASE_HEADERS,
@@ -201,11 +239,12 @@ async function fetchPostbackBill(normalized: string): Promise<string> {
       signal: AbortSignal.timeout(20000),
     });
   } catch (err: any) {
-    console.error("[iesco] POST fetch failed:", err?.name, err?.message);
+    const summary = causeSummary(err);
+    console.error("[iesco] POST fetch failed:", err?.name, err?.message, "|", summary);
     if (err?.name === "AbortError" || err?.name === "TimeoutError") {
-      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504, "POST timeout");
+      throw new IescoScraperError("NETWORK_ERROR", "IESCO server did not respond in time. Please try again.", 504, `POST timeout ${summary}`);
     }
-    throw new IescoScraperError("NETWORK_ERROR", `Could not submit to IESCO: ${err?.message ?? "unknown"}`, 503, `POST ${err?.name ?? "err"}`);
+    throw new IescoScraperError("NETWORK_ERROR", `Could not submit to IESCO: ${err?.message ?? "unknown"}`, 503, `POST ${summary || err?.name || "err"}`);
   }
 
   if (submitted.status === 429) {
